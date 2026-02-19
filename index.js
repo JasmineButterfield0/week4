@@ -18,19 +18,46 @@ const TASKS_FILE = path.resolve("tasks.json");
 // =============================================================
 // Helper: read tasks from disk
 // =============================================================
-// If the file doesn't exist yet we return an empty array so the
-// server works right away without any manual setup.
+// Tries to read and parse tasks.json.
+//
+// Two safe fallback cases are handled automatically:
+//   1. File not found (ENOENT) — creates a fresh tasks.json
+//      with an empty array so the server never crashes on
+//      a missing file.
+//   2. Invalid JSON — the file may be corrupted or empty.
+//      We reset it to a clean empty array rather than crashing.
+//
+// Any other unexpected errors (e.g. permission denied) are
+// re-thrown so they surface clearly instead of being silently
+// swallowed.
 // =============================================================
 async function readTasks() {
   try {
+    // Attempt to read the file from disk
     const data = await fs.readFile(TASKS_FILE, "utf-8");
+
+    // Parse the JSON text into a JavaScript array
     return JSON.parse(data);
   } catch (error) {
-    // File doesn't exist or is invalid — start fresh
-    if (error.code === "ENOENT" || error instanceof SyntaxError) {
+    // Case 1: tasks.json does not exist yet
+    if (error.code === "ENOENT") {
+      console.error("tasks.json not found — creating it with an empty list.");
+      // Write an empty array to disk so the file exists going forward
+      await writeTasks([]);
       return [];
     }
-    throw error; // Re-throw unexpected errors
+
+    // Case 2: The file exists but its contents are not valid JSON
+    if (error instanceof SyntaxError) {
+      console.error("tasks.json contains invalid JSON — resetting to empty list.");
+      // Overwrite the bad data with a clean empty array
+      await writeTasks([]);
+      return [];
+    }
+
+    // Any other error (e.g. permission denied) — re-throw so it
+    // surfaces clearly instead of being silently ignored
+    throw error;
   }
 }
 
